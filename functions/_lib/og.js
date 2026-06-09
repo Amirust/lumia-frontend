@@ -55,9 +55,7 @@ class HeadAppender {
   }
 }
 
-async function fetchOgMeta(env, id) {
-  const apiBase = trimSlash(env.NUXT_PUBLIC_API_BASE_URL || env.OG_API_BASE_URL)
-  if (!apiBase) return null
+async function fetchOgMeta(apiBase, id) {
   try {
     const res = await fetch(`${apiBase}/images/${encodeURIComponent(id)}/og`, {
       headers: { accept: 'application/json' },
@@ -71,9 +69,8 @@ async function fetchOgMeta(env, id) {
   }
 }
 
-function buildPreview(meta, env, pageUrl) {
-  const cdnBase = trimSlash(env.NUXT_PUBLIC_BASE_CDN_URL || env.OG_CDN_BASE_URL)
-  if (!meta || !meta.storageKey || !cdnBase) return null
+function buildPreview(meta, cdnBase, pageUrl) {
+  if (!meta || !meta.storageKey) return null
 
   const imageUrl = `${cdnBase}/${meta.storageKey}`
 
@@ -96,6 +93,19 @@ function buildPreview(meta, env, pageUrl) {
   }
 }
 
+// Serve the untouched SPA shell, tagging it with the reason the per-image preview
+// was skipped. Curl the URL and read `x-lumia-og` to see exactly what happened:
+//   (header absent) → the Function never ran (not deployed / root dir misconfig)
+//   fallback:no-env → NUXT_PUBLIC_API_BASE_URL / NUXT_PUBLIC_BASE_CDN_URL not bound
+//   fallback:no-meta → backend /images/:id/og unreachable, 404, or not deployed
+//   fallback:bad-meta → endpoint returned but without a usable storageKey
+//   image → success (if the embed is still generic, it's the Discord-side cache)
+function passthroughShell(shell, reason) {
+  const res = new Response(shell.body, shell)
+  res.headers.set('x-lumia-og', reason)
+  return res
+}
+
 export async function renderImageOg(context, id) {
   const { request, env, waitUntil } = context
 
@@ -112,10 +122,15 @@ export async function renderImageOg(context, id) {
   const shell = await env.ASSETS.fetch(new Request(`${origin}/index.html`, { method: 'GET' }))
   if (!shell.ok) return shell
 
-  const meta = await fetchOgMeta(env, id)
-  const preview = meta ? buildPreview(meta, env, request.url) : null
+  const apiBase = trimSlash(env.NUXT_PUBLIC_API_BASE_URL || env.OG_API_BASE_URL)
+  const cdnBase = trimSlash(env.NUXT_PUBLIC_BASE_CDN_URL || env.OG_CDN_BASE_URL)
+  if (!apiBase || !cdnBase) return passthroughShell(shell, 'fallback:no-env')
 
-  if (!preview) return shell
+  const meta = await fetchOgMeta(apiBase, id)
+  if (!meta) return passthroughShell(shell, 'fallback:no-meta')
+
+  const preview = buildPreview(meta, cdnBase, request.url)
+  if (!preview) return passthroughShell(shell, 'fallback:bad-meta')
 
   const transformed = new HTMLRewriter()
     .on('meta[property="og:type"]', new AttrSetter('article'))
