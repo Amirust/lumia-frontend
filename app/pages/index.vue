@@ -210,6 +210,10 @@ onUnmounted(() => {
 })
 
 const bodyRef = ref<HTMLElement | null>(null)
+interface GalleryHitTester {
+  hitTest: (rect: { left: number; top: number; right: number; bottom: number }) => string[]
+}
+const galleryRef = ref<GalleryHitTester | null>(null)
 const marquee = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 let dragStart: { x: number; y: number; additive: boolean; baseline: Set<string> } | null = null
 const DRAG_THRESHOLD = 6
@@ -246,12 +250,7 @@ function onBodyPointerMove(e: PointerEvent): void {
     w: right - left,
     h: bottom - top,
   }
-  const hits: string[] = []
-  host.querySelectorAll<HTMLElement>('.gcard[data-image-id]').forEach((el) => {
-    const r = el.getBoundingClientRect()
-    const intersects = r.left < right && r.right > left && r.top < bottom && r.bottom > top
-    if (intersects) hits.push(el.dataset.imageId!)
-  })
+  const hits = galleryRef.value?.hitTest({ left, top, right, bottom }) ?? []
   const next = new Set(dragStart.additive ? dragStart.baseline : [])
   for (const id of hits) next.add(id)
   selection.setSelection([...next])
@@ -470,6 +469,7 @@ async function confirmDelete(): Promise<void> {
           </template>
 
           <GalleryVirtual
+            ref="galleryRef"
             :images="images"
             :view="view"
             :density="density"

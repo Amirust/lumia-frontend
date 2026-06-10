@@ -114,6 +114,33 @@ watch(
 function isRevealing(id: string): boolean {
   return !revealed.value.has(id)
 }
+
+interface ViewportRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+function hitTest(rect: ViewportRect): string[] {
+  const el = root.value
+  if (!el) return []
+  const r = el.getBoundingClientRect()
+  const cw = colWidth.value
+  const hits: string[] = []
+  for (const it of layout.value.items) {
+    const left = r.left + it.x
+    const top = r.top + it.y
+    const right = left + cw
+    const bottom = top + it.h
+    if (left < rect.right && right > rect.left && top < rect.bottom && bottom > rect.top) {
+      hits.push(it.image.id)
+    }
+  }
+  return hits
+}
+
+defineExpose({ hitTest })
 function revealDelay(id: string): string {
   return `${revealDelays.value.get(id) ?? 0}ms`
 }
