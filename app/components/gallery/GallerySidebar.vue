@@ -42,9 +42,18 @@ const series = ref<AnimeView[]>([])
 const seasons = ref<SeasonView[]>([])
 const episodes = ref<EpisodeView[]>([])
 
-const selectedChar = computed(
-  () => characters.value.find((c) => c.tagName === props.modelValue.characterTag) ?? null,
-)
+// Character resolved directly from the active characterTag (e.g. from the URL)
+// when it isn't part of the default character list.
+const hydratedChar = ref<CharacterView | null>(null)
+
+const selectedChar = computed(() => {
+  const tag = props.modelValue.characterTag
+  if (!tag) return null
+  return (
+    characters.value.find((c) => c.tagName === tag) ??
+    (hydratedChar.value?.tagName === tag ? hydratedChar.value : null)
+  )
+})
 
 async function resolveCharacterAvatars(views: CharacterView[]): Promise<void> {
   await Promise.all(
@@ -65,14 +74,50 @@ async function loadCharacters(): Promise<void> {
   characters.value = [...views]
 }
 
+// Resolve a character (with its avatar) straight from its tag so a tag coming
+// from the URL renders correctly even when it isn't in the default list.
+async function resolveByTag(tag: string): Promise<CharacterView | null> {
+  try {
+    const dto = await api.getCharacterByTag(tag)
+    return toCharacterView(dto)
+  } catch {
+    const rows = await api.listCharacters({ name: tag, limit: 10 }).catch(() => [])
+    const match = rows.find((c) => c.tag === tag) ?? rows[0]
+    return match ? toCharacterView(match) : null
+  }
+}
+
+async function hydrateSelectedCharacter(tag: string): Promise<void> {
+  if (characters.value.some((c) => c.tagName === tag)) return
+  if (hydratedChar.value?.tagName === tag) return
+  const view = await resolveByTag(tag)
+  if (!view || props.modelValue.characterTag !== tag) return
+  await resolveCharacterAvatars([view])
+  if (props.modelValue.characterTag === tag) hydratedChar.value = view
+}
+
+watch(
+  () => props.modelValue.characterTag,
+  (tag) => {
+    if (hydratedChar.value && hydratedChar.value.tagName !== tag) hydratedChar.value = null
+    if (tag) void hydrateSelectedCharacter(tag)
+  },
+  { immediate: true },
+)
+
 const charSearch = ref('')
 const charResults = ref<CharacterView[]>([])
 const charSearching = ref(false)
 let charSearchTimer: ReturnType<typeof setTimeout> | null = null
 
-const characterOptions = computed(() =>
-  charSearch.value.trim() ? charResults.value : characters.value,
-)
+const characterOptions = computed(() => {
+  if (charSearch.value.trim()) return charResults.value
+  const hydrated = hydratedChar.value
+  if (hydrated && !characters.value.some((c) => c.id === hydrated.id)) {
+    return [hydrated, ...characters.value]
+  }
+  return characters.value
+})
 
 async function runCharSearch(query: string): Promise<void> {
   try {

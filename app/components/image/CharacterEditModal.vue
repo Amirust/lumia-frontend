@@ -363,13 +363,15 @@ function onSave(): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  min-width: 26px;
   height: 26px;
+  padding: 0 8px;
   border-radius: 13px;
   background: color-mix(in srgb, var(--cat-character) 13%, transparent);
   color: var(--cat-character);
   font-weight: 700;
   font-size: 11px;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 .ce__usage-text {
